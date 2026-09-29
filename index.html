@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lugares Incríveis 2026 — Monte a sua peça</title>
+<style>
+:root{--blue:#0B3471;--ink:#12213d;--muted:#5b6b86;--line:#d8e0ee;--bg:#eef2f9;--lime:#c8e04a}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Motiva Sans","Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:28px 24px 8px;max-width:1000px;margin:0 auto}
+h1{margin:0 0 6px;font-size:1.6rem;color:var(--blue)}
+header p{margin:0;color:var(--muted)}
+main{max-width:1000px;margin:0 auto;padding:16px 24px 40px;display:grid;grid-template-columns:minmax(0,360px) 1fr;gap:32px;align-items:start}
+.stage{background:#fff;padding:10px;border-radius:14px;box-shadow:0 8px 30px rgba(11,52,113,.15)}
+canvas{width:100%;height:auto;display:block;border-radius:6px;touch-action:none;cursor:grab}
+canvas.drag{cursor:grabbing}
+.panel{display:flex;flex-direction:column;gap:20px}
+.step{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px}
+.step h2{margin:0 0 4px;font-size:1.05rem;color:var(--blue)}
+.step p{margin:0 0 12px;font-size:.92rem;color:var(--muted)}
+.btn{display:inline-block;background:var(--blue);color:#fff;border:0;border-radius:999px;padding:12px 24px;font:inherit;font-weight:600;cursor:pointer}
+.btn:hover{background:#0a2b5e}.btn:focus-visible,input:focus-visible{outline:3px solid #6a9bff;outline-offset:2px}
+.btn[disabled]{background:#9aa9c4;cursor:not-allowed}
+input[type=text]{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;font:inherit}
+input[type=range]{width:100%}
+.tips{font-size:.85rem;color:var(--muted);margin:10px 0 0;padding-left:18px}
+#err{color:#b3261e;font-size:.9rem;margin-top:8px;min-height:1.2em}
+@media(max-width:760px){main{grid-template-columns:1fr}.stage{max-width:420px;margin:0 auto}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Monte a sua peça Lugares Incríveis 2026</h1>
+  <p>Envie sua foto, ajuste o enquadramento e baixe a imagem para compartilhar.</p>
+</header>
+<main>
+  <div class="stage"><canvas id="c" width="1080" height="1620" aria-label="Prévia da peça"></canvas></div>
+  <div class="panel">
+    <section class="step">
+      <h2>1. Escolha sua foto</h2>
+      <p>Uma foto do rosto, de frente, com boa iluminação.</p>
+      <input id="file" type="file" accept="image/*" hidden>
+      <button class="btn" id="pick">Enviar foto</button>
+      <div id="err" role="alert"></div>
+      <ul class="tips">
+        <li>Prefira fundo liso e claro.</li>
+        <li>Rosto centralizado, ombros à mostra.</li>
+        <li>Qualquer formato serve: a foto é recortada no quadro.</li>
+      </ul>
+    </section>
+    <section class="step">
+      <h2>2. Ajuste o enquadramento</h2>
+      <p>Arraste a foto na prévia para posicionar. Use o controle para aproximar.</p>
+      <label for="zoom" hidden>Zoom</label>
+      <input id="zoom" type="range" min="1" max="3" step="0.01" value="1" disabled>
+    </section>
+    <section class="step">
+      <h2>3. Seu nome (opcional)</h2>
+      <p>Aparece em uma etiqueta abaixo da foto.</p>
+      <input id="name" type="text" maxlength="40" placeholder="Nome e sobrenome">
+    </section>
+    <section class="step">
+      <h2>4. Baixe a peça</h2>
+      <p>Imagem PNG em alta resolução (1080 × 1620).</p>
+      <button class="btn" id="dl" disabled>Baixar imagem</button>
+    </section>
+  </div>
+</main>
+<script>
+const W=1080,H=1620,cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const F={x:540,y:210,s:460};            // quadro da foto
+const R={tl:120,tr:28,br:120,bl:28};    // cantos (mesmo estilo do card de aniversariante)
+const BLUE='#0B3471',LIME='#c8e04a',FONT='"Motiva Sans","Segoe UI",Arial,sans-serif';
+let img=null,zoom=1,px=0,py=0;
+
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r.tl,y);ctx.lineTo(x+w-r.tr,y);ctx.arcTo(x+w,y,x+w,y+r.tr,r.tr);
+ ctx.lineTo(x+w,y+h-r.br);ctx.arcTo(x+w,y+h,x+w-r.br,y+h,r.br);ctx.lineTo(x+r.bl,y+h);ctx.arcTo(x,y+h,x,y+h-r.bl,r.bl);
+ ctx.lineTo(x,y+r.tl);ctx.arcTo(x,y,x+r.tl,y,r.tl);ctx.closePath()}
+function txt(t,x,y,size,weight,color,align){ctx.font=`${weight} ${size}px ${FONT}`;ctx.fillStyle=color;ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';ctx.fillText(t,x,y)}
+function lines(arr,x,y,size,weight,color,lh,align){arr.forEach((t,i)=>txt(t,x,y+i*lh,size,weight,color,align));return y+arr.length*lh}
+
+function limits(){const b=Math.max(F.s/img.width,F.s/img.height)*zoom,mx=(img.width*b-F.s)/2,my=(img.height*b-F.s)/2;return{b,mx,my}}
+function clamp(){if(!img)return;const{mx,my}=limits();px=Math.max(-mx,Math.min(mx,px));py=Math.max(-my,Math.min(my,py))}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // fundo
+  let g=ctx.createLinearGradient(0,0,W,H*.7);g.addColorStop(0,'#f3f6fb');g.addColorStop(1,'#dfe8f6');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,255,255,.55)';ctx.beginPath();ctx.moveTo(430,0);ctx.lineTo(W,0);ctx.lineTo(W,120);ctx.lineTo(560,170);ctx.closePath();ctx.fill();
+  // faixa azul inferior
+  g=ctx.createLinearGradient(0,1000,W,H);g.addColorStop(0,'#0f3f86');g.addColorStop(1,'#08214d');
+  ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(0,1110);ctx.lineTo(W,990);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();ctx.fill();
+  ctx.fillStyle=BLUE;ctx.fillRect(0,0,W,14);
+
+  // selo
+  ctx.strokeStyle=BLUE;ctx.lineWidth=4;ctx.beginPath();ctx.arc(110,120,34,0,7);ctx.stroke();
+  ctx.beginPath();ctx.arc(110,114,12,0,7);ctx.stroke();ctx.beginPath();ctx.moveTo(102,124);ctx.lineTo(98,146);ctx.lineTo(110,138);ctx.lineTo(122,146);ctx.lineTo(118,124);ctx.stroke();
+
+  // textos
+  let y=lines(['Pelo 5º ano','consecutivo,','conquistamos a'],80,232,42,300,BLUE,54);
+  y=lines(['Certificação','FIA de Clima','Organizacional.'],80,y+34,60,700,BLUE,72);
+  lines(['Um reconhecimento','construído por todos','que fazem parte da','Sisprime.'],80,y+40,31,400,BLUE,42);
+
+  // foto
+  ctx.save();ctx.shadowColor='rgba(11,52,113,.30)';ctx.shadowBlur=40;ctx.shadowOffsetY=16;
+  rr(F.x,F.y,F.s,F.s,R);ctx.fillStyle='#fff';ctx.fill();ctx.restore();
+  ctx.save();rr(F.x,F.y,F.s,F.s,R);ctx.clip();
+  if(img){const{b}=limits(),w=img.width*b,h=img.height*b;ctx.drawImage(img,F.x+(F.s-w)/2+px,F.y+(F.s-h)/2+py,w,h)}
+  else{ctx.fillStyle='#e6ecf6';ctx.fillRect(F.x,F.y,F.s,F.s);ctx.fillStyle='#b9c7de';
+    ctx.beginPath();ctx.arc(F.x+F.s/2,F.y+F.s*.40,F.s*.16,0,7);ctx.fill();
+    ctx.beginPath();ctx.ellipse(F.x+F.s/2,F.y+F.s*.98,F.s*.34,F.s*.36,0,Math.PI,0);ctx.fill();
+    txt('Sua foto aqui',F.x+F.s/2,F.y+F.s*.16,30,600,'#7f92b3','center')}
+  ctx.restore();
+  ctx.lineWidth=8;ctx.strokeStyle='#fff';rr(F.x,F.y,F.s,F.s,R);ctx.stroke();
+
+  // etiqueta com nome
+  const nm=document.getElementById('name').value.trim();
+  if(nm){ctx.font=`700 34px ${FONT}`;const tw=Math.min(ctx.measureText(nm).width+64,F.s+40),cx=F.x+F.s/2;
+    ctx.fillStyle=BLUE;rr(cx-tw/2,F.y+F.s+30,tw,64,{tl:32,tr:32,br:32,bl:32});ctx.fill();
+    ctx.save();ctx.beginPath();ctx.rect(cx-tw/2+20,F.y+F.s+30,tw-40,64);ctx.clip();txt(nm,cx,F.y+F.s+73,34,700,'#fff','center');ctx.restore()}
+
+  // selo verde "Lugar Incrível"
+  const bx=90,by=850,bw=340,bh=430;
+  ctx.fillStyle='#1d4a2a';rr(bx,by,bw,bh,{tl:34,tr:34,br:34,bl:34});ctx.fill();
+  ctx.fillStyle=LIME;ctx.beginPath();ctx.arc(bx+bw/2,by+175,140,0,7);ctx.fill();
+  txt('LUGAR',bx+bw/2,by+108,26,700,'#1d4a2a','center');
+  txt('INCRÍVEL',bx+bw/2,by+160,50,800,'#1d4a2a','center');
+  txt('PARA TRABALHAR',bx+bw/2,by+192,20,700,'#1d4a2a','center');
+  txt('2026',bx+bw/2,by+232,30,800,'#1d4a2a','center');
+  txt('FIA',bx+bw/2,by+268,26,800,'#1d4a2a','center');
+  lines(['CERTIFICADO DE CLIMA','ORGANIZACIONAL'],bx+bw/2,by+370,24,700,'#fff',30,'center');
+
+  // Lugares incríveis para trabalhar
+  ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(560,1135,42,0,7);ctx.stroke();
+  [[548,1130],[572,1130]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1]-6,8,0,7);ctx.stroke();ctx.beginPath();ctx.arc(p[0],p[1]+22,15,Math.PI,0);ctx.stroke()});
+  txt('LUGARES',635,1122,38,700,'#fff');
+  txt('INCRÍVEIS',635,1172,58,800,LIME);
+  txt('PARA TRABALHAR',635,1206,28,700,'#fff');
+  txt('2026',635,1258,54,800,'#fff');
+
+  // rodapé
+  txt('sisprime',80,1520,92,700,'#fff');
+  txt('cooperativa de crédito',188,1553,24,400,'#fff');
+  ctx.fillStyle='#2e6ad8';ctx.beginPath();ctx.moveTo(422,1428);ctx.lineTo(500,1428);ctx.lineTo(478,1480);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(460,1428);ctx.lineTo(500,1428);ctx.lineTo(470,1468);ctx.closePath();ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.4)';ctx.fillRect(590,1460,2,110);
+  const jl=['Juntos, construímos','um ambiente ','para trabalhar.'];
+  txt(jl[0],620,1494,32,400,'#fff');
+  txt(jl[1],620,1534,32,400,'#fff');ctx.font=`400 32px ${FONT}`;const w1=ctx.measureText(jl[1]).width;
+  txt('incrível',620+w1,1534,32,700,LIME);
+  txt(jl[2],620,1574,32,400,'#fff');
+}
+
+// interação
+const file=document.getElementById('file'),zm=document.getElementById('zoom'),err=document.getElementById('err'),dl=document.getElementById('dl');
+document.getElementById('pick').onclick=()=>file.click();
+file.onchange=()=>{err.textContent='';const f=file.files[0];if(!f)return;
+  if(!f.type.startsWith('image/')){err.textContent='Arquivo inválido. Envie uma imagem (JPG, PNG ou WebP).';return}
+  const u=URL.createObjectURL(f),im=new Image();
+  im.onload=()=>{img=im;zoom=1;px=py=0;zm.value=1;zm.disabled=false;dl.disabled=false;draw();URL.revokeObjectURL(u)};
+  im.onerror=()=>{err.textContent='Não foi possível abrir essa imagem. Tente outra foto.'};im.src=u};
+zm.oninput=()=>{zoom=+zm.value;clamp();draw()};
+document.getElementById('name').oninput=draw;
+let drag=null;
+function pos(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+cv.onpointerdown=e=>{if(!img)return;drag=pos(e);cv.classList.add('drag');cv.setPointerCapture(e.pointerId)};
+cv.onpointermove=e=>{if(!drag)return;const p=pos(e);px+=p.x-drag.x;py+=p.y-drag.y;drag=p;clamp();draw()};
+cv.onpointerup=cv.onpointercancel=()=>{drag=null;cv.classList.remove('drag')};
+cv.onwheel=e=>{if(!img)return;e.preventDefault();zoom=Math.max(1,Math.min(3,zoom-e.deltaY*.002));zm.value=zoom;clamp();draw()};
+dl.onclick=()=>{cv.toBlob(b=>{const a=document.createElement('a'),n=document.getElementById('name').value.trim().replace(/\s+/g,'-').toLowerCase();
+  a.href=URL.createObjectURL(b);a.download='lugares-incriveis-2026'+(n?'-'+n:'')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)},'image/png')};
+draw();
+(document.fonts&&document.fonts.ready||Promise.resolve()).then(draw);
+</script>
+</body>
+</html>
